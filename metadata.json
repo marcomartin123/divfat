@@ -1,0 +1,5 @@
+{
+  "name": "Divisor de Contas",
+  "description": "Faça upload de faturas de cartão de crédito em PDF, converta automaticamente para dados estruturados e divida os custos entre duas pessoas com facilidade.",
+  "requestFramePermissions": []
+}
