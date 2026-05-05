@@ -1,7 +1,15 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { ExtractedData } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getGeminiClient = () => {
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Configure a GEMINI_API_KEY no arquivo .env.local para processar PDFs.");
+  }
+
+  return new GoogleGenAI({ apiKey });
+};
 
 // Helper to convert file to base64
 const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
@@ -50,6 +58,7 @@ const invoiceSchema: Schema = {
 
 export const parseInvoicePDF = async (file: File): Promise<ExtractedData> => {
   try {
+    const ai = getGeminiClient();
     const filePart = await fileToGenerativePart(file);
 
     const response = await ai.models.generateContent({
