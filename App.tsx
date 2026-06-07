@@ -6,6 +6,7 @@ import { Summary } from './components/Summary';
 import { ManualEntry } from './components/ManualEntry';
 import { HistoryView } from './components/HistoryView';
 import { parseInvoicePDF } from './services/geminiService';
+import { createProcess, deleteProcess, listProcesses, saveProcess } from './services/processService';
 import { Transaction, Assignment, DEFAULT_PEOPLE, PersonProfile, Process, ProcessStatus, InvoiceFile, PersonKey } from './types';
 import { Receipt, AlertCircle, X, ChevronLeft, AlertTriangle, UploadCloud, Trash2 } from 'lucide-react';
 
@@ -25,6 +26,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 export default function App() {
   const [processes, setProcesses] = useState<Process[]>([]);
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProofModal, setShowProofModal] = useState(false);
@@ -50,28 +52,20 @@ export default function App() {
   // Category Filter State
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  // Load from local storage on mount
   useEffect(() => {
-    const stored = localStorage.getItem('invoice_app_data_v1');
-    if (stored) {
+    const loadProcesses = async () => {
       try {
-        const parsed = JSON.parse(stored);
-        setProcesses(parsed);
-      } catch (e) {
-        console.error("Failed to load history", e);
+        const data = await listProcesses();
+        setProcesses(data);
+      } catch (e: any) {
+        setError(e.message || "Erro ao carregar dados da nuvem.");
+      } finally {
+        setIsLoading(false);
       }
-    }
-  }, []);
+    };
 
-  // Save to local storage on change
-  useEffect(() => {
-    try {
-      localStorage.setItem('invoice_app_data_v1', JSON.stringify(processes));
-    } catch (e) {
-      console.error("Storage quota exceeded", e);
-      setError("Aviso: O armazenamento local está cheio. Algumas faturas antigas podem não salvar corretamente.");
-    }
-  }, [processes]);
+    loadProcesses();
+  }, []);
 
   // Reset category filter when changing process
   useEffect(() => {
@@ -79,6 +73,12 @@ export default function App() {
   }, [activeProcessId]);
 
   const activeProcess = processes.find(p => p.id === activeProcessId);
+
+  const persistProcess = async (process: Process) => {
+    const saved = await saveProcess(process);
+    setProcesses(prev => prev.map(p => p.id === saved.id ? saved : p));
+    return saved;
+  };
 
   const handleStartCreate = () => {
     const now = new Date();
@@ -92,40 +92,42 @@ export default function App() {
     setShowResetConfirmation(true);
   };
 
-  const confirmResetData = () => {
-    localStorage.removeItem('invoice_app_data_v1');
-    setProcesses([]);
-    setActiveProcessId(null);
-    setPersonA(DEFAULT_PEOPLE.PERSON_A);
-    setPersonB(DEFAULT_PEOPLE.PERSON_B);
-    setShowResetConfirmation(false);
+  const confirmResetData = async () => {
+    try {
+      await Promise.all(processes.map(p => deleteProcess(p.id)));
+      setProcesses([]);
+      setActiveProcessId(null);
+      setPersonA(DEFAULT_PEOPLE.PERSON_A);
+      setPersonB(DEFAULT_PEOPLE.PERSON_B);
+      setShowResetConfirmation(false);
+    } catch (e: any) {
+      setError(e.message || "Erro ao apagar dados.");
+    }
   };
 
   const handleDeleteProcess = (id: string) => {
     setProcessToDeleteId(id);
   };
 
-  const confirmDeleteProcess = () => {
+  const confirmDeleteProcess = async () => {
     if (processToDeleteId) {
-      setProcesses(prev => {
-        // 1. Remove o processo que está sendo deletado
-        const remainingProcesses = prev.filter(p => p.id !== processToDeleteId);
-
-        // 2. CRUCIAL: Procura processos antigos que apontavam para este processo deletado
-        // e reseta o link, liberando o saldo para ser importado novamente no futuro.
-        return remainingProcesses.map(p => {
+      try {
+        await deleteProcess(processToDeleteId);
+        const remainingProcesses = processes.filter(p => p.id !== processToDeleteId);
+        const updatedProcesses = await Promise.all(remainingProcesses.map(async (p) => {
           if (p.carriedOverToProcessId === processToDeleteId) {
-            // Remove o vínculo, tornando a dívida "pendente" novamente
-            return { ...p, carriedOverToProcessId: null }; 
+            return persistProcess({ ...p, carriedOverToProcessId: null });
           }
           return p;
-        });
-      });
-      
-      setProcessToDeleteId(null);
-      // Se o processo deletado era o ativo, volta para o histórico
-      if (activeProcessId === processToDeleteId) {
-        setActiveProcessId(null);
+        }));
+
+        setProcesses(updatedProcesses);
+        setProcessToDeleteId(null);
+        if (activeProcessId === processToDeleteId) {
+          setActiveProcessId(null);
+        }
+      } catch (e: any) {
+        setError(e.message || "Erro ao excluir mês.");
       }
     }
   };
@@ -147,7 +149,8 @@ export default function App() {
       const text = await file.text();
       const parsedData = JSON.parse(text);
       if (Array.isArray(parsedData)) {
-        setProcesses(parsedData);
+        const saved = await Promise.all((parsedData as Process[]).map(saveProcess));
+        setProcesses(saved);
         alert('Backup restaurado com sucesso!');
       } else {
         setError("Arquivo inválido.");
@@ -157,43 +160,37 @@ export default function App() {
     }
   };
 
-  const confirmCreateProcess = (e?: React.FormEvent) => {
+  const confirmCreateProcess = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!newProcessName.trim()) return;
 
-    const newId = generateId();
-    const newProcess: Process = {
-      id: newId,
-      name: newProcessName,
-      createdAt: new Date().toISOString(),
-      status: ProcessStatus.OPEN,
-      transactions: [],
-      invoices: []
-    };
+    try {
+      const newProcess = await createProcess(newProcessName);
+      let updatedProcesses = [newProcess, ...processes];
 
-    let updatedProcesses = [newProcess, ...processes];
-    
-    // Check for CarryOver debts that are NOT linked to any process yet
-    const pendingProcess = processes.find(p => 
-      p.status === ProcessStatus.CLOSED && 
-      p.closingBalance && 
-      !p.carriedOverToProcessId // Only pick debts that are free
-    );
+      const pendingProcess = processes.find(p => 
+        p.status === ProcessStatus.CLOSED && 
+        p.closingBalance && 
+        !p.carriedOverToProcessId
+      );
 
-    if (pendingProcess) {
-       setPendingDebtProcess(pendingProcess);
-       setProcesses(updatedProcesses);
-       setActiveProcessId(newId);
-       setIsCreatingProcess(false);
-       return;
+      if (pendingProcess) {
+        setPendingDebtProcess(pendingProcess);
+        setProcesses(updatedProcesses);
+        setActiveProcessId(newProcess.id);
+        setIsCreatingProcess(false);
+        return;
+      }
+
+      setProcesses(updatedProcesses);
+      setActiveProcessId(newProcess.id);
+      setIsCreatingProcess(false);
+    } catch (err: any) {
+      setError(err.message || "Erro ao criar mês.");
     }
-
-    setProcesses(updatedProcesses);
-    setActiveProcessId(newId);
-    setIsCreatingProcess(false);
   };
 
-  const handleImportPendingDebt = (shouldImport: boolean) => {
+  const handleImportPendingDebt = async (shouldImport: boolean) => {
     if (!pendingDebtProcess || !activeProcessId) return;
 
     if (shouldImport && pendingDebtProcess.closingBalance) {
@@ -211,15 +208,20 @@ export default function App() {
         category: 'Outros'
       };
 
-      setProcesses(prev => prev.map(p => {
-        if (p.id === activeProcessId) {
-          return { ...p, transactions: [debtTx, ...p.transactions] };
-        }
-        if (p.id === pendingDebtProcess.id) {
-          return { ...p, carriedOverToProcessId: activeProcessId };
-        }
-        return p;
-      }));
+      const currentActive = processes.find(p => p.id === activeProcessId);
+      if (!currentActive) return;
+
+      try {
+        const updatedActive = await saveProcess({ ...currentActive, transactions: [debtTx, ...currentActive.transactions] });
+        const updatedPending = await saveProcess({ ...pendingDebtProcess, carriedOverToProcessId: activeProcessId });
+        setProcesses(prev => prev.map(p => {
+          if (p.id === updatedActive.id) return updatedActive;
+          if (p.id === updatedPending.id) return updatedPending;
+          return p;
+        }));
+      } catch (e: any) {
+        setError(e.message || "Erro ao importar saldo anterior.");
+      }
     }
 
     setPendingDebtProcess(null);
@@ -270,16 +272,11 @@ export default function App() {
         sourceInvoiceId: invoiceId
       }));
 
-      setProcesses(prev => prev.map(p => {
-        if (p.id === activeProcessId) {
-          return {
-            ...p,
-            invoices: [...p.invoices, newInvoice],
-            transactions: [...p.transactions, ...newTransactions]
-          };
-        }
-        return p;
-      }));
+      await persistProcess({
+        ...activeProcess,
+        invoices: [...activeProcess.invoices, newInvoice],
+        transactions: [...activeProcess.transactions, ...newTransactions]
+      });
 
     } catch (err: any) {
       setError(err.message || "Ocorreu um erro ao processar o PDF.");
@@ -288,7 +285,7 @@ export default function App() {
     }
   };
 
-  const handleManualTransaction = (description: string, amount: number, date: string, payer: PersonKey, assignment: Assignment, category: string) => {
+  const handleManualTransaction = async (description: string, amount: number, date: string, payer: PersonKey, assignment: Assignment, category: string) => {
     if (!activeProcess) return;
 
     const newTx: Transaction = {
@@ -302,50 +299,51 @@ export default function App() {
       category
     };
 
-    setProcesses(prev => prev.map(p => {
-      if (p.id === activeProcessId) {
-        return { ...p, transactions: [newTx, ...p.transactions] };
-      }
-      return p;
-    }));
+    try {
+      await persistProcess({ ...activeProcess, transactions: [newTx, ...activeProcess.transactions] });
+    } catch (e: any) {
+      setError(e.message || "Erro ao adicionar item.");
+    }
   };
 
-  const handleUpdateAssignment = (id: string, assignment: Assignment) => {
-    setProcesses(prev => prev.map(p => {
-      if (p.id === activeProcessId) {
-        return {
-          ...p,
-          transactions: p.transactions.map(tx => tx.id === id ? { ...tx, assignment } : tx)
-        };
-      }
-      return p;
-    }));
+  const handleUpdateAssignment = async (id: string, assignment: Assignment) => {
+    if (!activeProcess) return;
+
+    try {
+      await persistProcess({
+        ...activeProcess,
+        transactions: activeProcess.transactions.map(tx => tx.id === id ? { ...tx, assignment } : tx)
+      });
+    } catch (e: any) {
+      setError(e.message || "Erro ao atualizar item.");
+    }
   };
 
-  const handleDeleteTransaction = (id: string) => {
-    setProcesses(prev => prev.map(p => {
-      if (p.id === activeProcessId) {
-        const txToDelete = p.transactions.find(tx => tx.id === id);
-        if (!txToDelete) return p;
+  const handleDeleteTransaction = async (id: string) => {
+    if (!activeProcess) return;
 
-        let updatedInvoices = p.invoices;
-        if (txToDelete.sourceInvoiceId) {
-          updatedInvoices = p.invoices.map(inv => {
-            if (inv.id === txToDelete.sourceInvoiceId) {
-              return { ...inv, totalAmount: Math.max(0, inv.totalAmount - txToDelete.amount) };
-            }
-            return inv;
-          });
+    const txToDelete = activeProcess.transactions.find(tx => tx.id === id);
+    if (!txToDelete) return;
+
+    let updatedInvoices = activeProcess.invoices;
+    if (txToDelete.sourceInvoiceId) {
+      updatedInvoices = activeProcess.invoices.map(inv => {
+        if (inv.id === txToDelete.sourceInvoiceId) {
+          return { ...inv, totalAmount: Math.max(0, inv.totalAmount - txToDelete.amount) };
         }
+        return inv;
+      });
+    }
 
-        return {
-          ...p,
-          invoices: updatedInvoices,
-          transactions: p.transactions.filter(tx => tx.id !== id)
-        };
-      }
-      return p;
-    }));
+    try {
+      await persistProcess({
+        ...activeProcess,
+        invoices: updatedInvoices,
+        transactions: activeProcess.transactions.filter(tx => tx.id !== id)
+      });
+    } catch (e: any) {
+      setError(e.message || "Erro ao excluir item.");
+    }
   };
 
   const handleCloseProcess = async (file: File) => {
@@ -354,21 +352,16 @@ export default function App() {
      try {
        const fileData = await fileToBase64(file);
 
-       setProcesses(prev => prev.map(p => {
-        if (p.id === activeProcessId) {
-          return {
-            ...p,
-            status: ProcessStatus.CLOSED,
-            closedAt: new Date().toISOString(),
-            proofOfPayment: {
-              fileName: file.name,
-              date: new Date().toISOString(),
-              fileData: fileData
-            }
-          };
-        }
-        return p;
-      }));
+       await persistProcess({
+         ...activeProcess,
+         status: ProcessStatus.CLOSED,
+         closedAt: new Date().toISOString(),
+         proofOfPayment: {
+           fileName: file.name,
+           date: new Date().toISOString(),
+           fileData: fileData
+         }
+       });
       setShowProofModal(false);
       setActiveProcessId(null);
      } catch (e) {
@@ -380,25 +373,24 @@ export default function App() {
     setCarryOverData({ debtor, amount });
   };
 
-  const confirmCarryOver = () => {
+  const confirmCarryOver = async () => {
     if (!activeProcess || !carryOverData) return;
 
-    setProcesses(prev => prev.map(p => {
-      if (p.id === activeProcessId) {
-        return {
-          ...p,
-          status: ProcessStatus.CLOSED,
-          closedAt: new Date().toISOString(),
-          closingBalance: {
-            debtor: carryOverData.debtor,
-            amount: carryOverData.amount
-          }
-        };
-      }
-      return p;
-    }));
-    setCarryOverData(null);
-    setActiveProcessId(null);
+    try {
+      await persistProcess({
+        ...activeProcess,
+        status: ProcessStatus.CLOSED,
+        closedAt: new Date().toISOString(),
+        closingBalance: {
+          debtor: carryOverData.debtor,
+          amount: carryOverData.amount
+        }
+      });
+      setCarryOverData(null);
+      setActiveProcessId(null);
+    } catch (e: any) {
+      setError(e.message || "Erro ao fechar mês com saldo pendente.");
+    }
   };
 
   const handleViewPdf = (base64Data: string, title: string) => {
