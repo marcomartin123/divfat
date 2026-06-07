@@ -6,7 +6,6 @@ import { Summary } from './components/Summary';
 import { ManualEntry } from './components/ManualEntry';
 import { HistoryView } from './components/HistoryView';
 import { parseInvoicePDF } from './services/geminiService';
-import { saveBackupToSupabase, loadBackupFromSupabase } from './services/supabaseService';
 import { Transaction, Assignment, DEFAULT_PEOPLE, PersonProfile, Process, ProcessStatus, InvoiceFile, PersonKey } from './types';
 import { Receipt, AlertCircle, X, ChevronLeft, AlertTriangle, UploadCloud, Trash2 } from 'lucide-react';
 
@@ -27,7 +26,6 @@ export default function App() {
   const [processes, setProcesses] = useState<Process[]>([]);
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProofModal, setShowProofModal] = useState(false);
   
@@ -158,37 +156,6 @@ export default function App() {
       setError("Erro ao ler arquivo de backup.");
     }
   };
-
-  // --- SUPABASE ACTIONS ---
-  const handleSupabaseSave = async () => {
-    setIsSyncing(true);
-    setError(null);
-    try {
-      await saveBackupToSupabase(processes);
-      alert('Histórico salvo na nuvem com sucesso!');
-    } catch (err: any) {
-      setError(err.message || 'Erro ao salvar na nuvem.');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleSupabaseLoad = async () => {
-    setIsSyncing(true);
-    setError(null);
-    try {
-      const data = await loadBackupFromSupabase();
-      if (data && Array.isArray(data)) {
-        setProcesses(data);
-        alert('Dados baixados da nuvem e atualizados!');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Erro ao baixar da nuvem.');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-  // ------------------------
 
   const confirmCreateProcess = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -511,9 +478,6 @@ export default function App() {
             onDeleteProcess={handleDeleteProcess}
             onExportData={handleExportData}
             onImportData={handleImportData}
-            onSupabaseSave={handleSupabaseSave}
-            onSupabaseLoad={handleSupabaseLoad}
-            isSyncing={isSyncing}
             personA={personA}
             personB={personB}
           />

@@ -1,7 +1,7 @@
 
 import React, { useRef } from 'react';
 import { Process, ProcessStatus, PersonProfile } from '../types';
-import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud, Cloud, CloudDownload } from 'lucide-react';
+import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud } from 'lucide-react';
 
 interface HistoryViewProps {
   processes: Process[];
@@ -13,9 +13,6 @@ interface HistoryViewProps {
   onDeleteProcess: (id: string) => void;
   onExportData: () => void; // Local Download (Backup simples)
   onImportData: (file: File) => void; // Local Upload
-  onSupabaseSave: () => void;
-  onSupabaseLoad: () => void;
-  isSyncing: boolean;
 }
 
 export const HistoryView: React.FC<HistoryViewProps> = ({ 
@@ -25,10 +22,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   onResetData,
   onDeleteProcess,
   onExportData,
-  onImportData,
-  onSupabaseSave,
-  onSupabaseLoad,
-  isSyncing
+  onImportData
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -57,32 +51,6 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           <p className="text-slate-500">Gerencie seus ciclos de divisão de contas</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          
-          {/* Cloud Actions */}
-          <div className="flex bg-white rounded-lg border border-slate-200 p-1 gap-1">
-             <button 
-                onClick={onSupabaseLoad}
-                disabled={isSyncing}
-                title="Baixar histórico da nuvem (Supabase)"
-                className="flex items-center gap-2 px-3 py-1.5 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
-              >
-                <CloudDownload className={`w-4 h-4 ${isSyncing ? 'animate-pulse' : ''}`} />
-                <span className="hidden sm:inline">Baixar Nuvem</span>
-              </button>
-              <div className="w-px bg-slate-200 my-1"></div>
-              <button 
-                onClick={onSupabaseSave}
-                disabled={isSyncing}
-                title="Salvar histórico na nuvem (Supabase)"
-                className="flex items-center gap-2 px-3 py-1.5 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors text-sm font-medium disabled:opacity-50"
-              >
-                <Cloud className={`w-4 h-4 ${isSyncing ? 'animate-pulse' : ''}`} />
-                <span className="hidden sm:inline">Salvar Nuvem</span>
-              </button>
-          </div>
-
-          <div className="h-6 w-px bg-slate-300 mx-2 hidden sm:block"></div>
-
           {/* Local Actions */}
           <input 
             type="file" 
@@ -131,7 +99,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             <Clock className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-slate-700">Nenhum histórico encontrado</h3>
             <p className="text-slate-500 max-w-xs mx-auto mt-2">
-              Clique em "Baixar Nuvem" para restaurar seus dados ou crie um novo mês.
+              Importe um backup JSON local ou crie um novo mês.
             </p>
           </div>
         ) : (
