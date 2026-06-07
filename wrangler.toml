@@ -1,0 +1,8 @@
+name = "divfat"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-06-07"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "divfat-db"
+database_id = "2b46bcb9-792d-41e1-ba75-7231c5dd1419"
