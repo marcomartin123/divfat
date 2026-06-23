@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Process, ProcessStatus, PersonProfile, BalanceEntry } from '../types';
-import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud, AlertTriangle, ScrollText } from 'lucide-react';
+import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud, AlertTriangle, ScrollText, Pencil, Check, X } from 'lucide-react';
 import { getBalanceSummary } from '../services/balanceService';
+import { formatDateBR } from '../services/dateFormat';
 
 interface HistoryViewProps {
   processes: Process[];
@@ -11,6 +12,7 @@ interface HistoryViewProps {
   onCreateNew: () => void;
   onResetData: () => void;
   onDeleteProcess: (id: string) => void;
+  onRenameProcess: (id: string, newName: string) => void;
   onExportData: () => void;
   onImportData: (file: File) => void;
   balanceEntries: BalanceEntry[];
@@ -26,6 +28,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   onCreateNew, 
   onResetData,
   onDeleteProcess,
+  onRenameProcess,
   onExportData,
   onImportData,
   balanceEntries,
@@ -34,17 +37,25 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const balanceSummary = getBalanceSummary(balanceEntries);
   const hasPending = balanceSummary.debtor && balanceSummary.amount > 0.01;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
   
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('pt-BR');
-  };
-
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
   const getProcessTotal = (process: Process) => {
     return process.transactions.reduce((acc, t) => acc + t.amount, 0);
+  };
+
+  const getDueDatesDisplay = (process: Process): string => {
+    const dueDates = process.invoices
+      .map(inv => inv.dueDate)
+      .filter(Boolean)
+      .sort();
+    
+    if (dueDates.length === 0) return 'Sem vencimento';
+    return dueDates.map(d => formatDateBR(d!)).join(' / ');
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,15 +162,71 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                     {process.status === ProcessStatus.CLOSED ? <CheckCircle className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
-                      {process.name}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      {editingId === process.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                onRenameProcess(process.id, editName);
+                                setEditingId(null);
+                              }
+                              if (e.key === 'Escape') setEditingId(null);
+                            }}
+                            className="text-lg font-bold text-slate-800 border-b-2 border-indigo-500 outline-none bg-transparent px-1"
+                            autoFocus
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRenameProcess(process.id, editName);
+                              setEditingId(null);
+                            }}
+                            className="p-1 text-green-600 hover:bg-green-50 rounded"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingId(null);
+                            }}
+                            className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <h3 className="text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                            {process.name}
+                          </h3>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingId(process.id);
+                              setEditName(process.name);
+                            }}
+                            className="p-1 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                            title="Renomear"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                     <div className="flex gap-4 text-sm text-slate-500 mt-1">
                       <span className="flex items-center gap-1">
                         <FileText className="w-3 h-3" /> {process.invoices.length} Faturas
                       </span>
                       <span>•</span>
-                      <span>Criado em {formatDate(process.createdAt)}</span>
+                      <span>Criado em {formatDateBR(process.createdAt.slice(0, 10))}</span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Fat. Venc: {getDueDatesDisplay(process)}
                     </div>
                   </div>
                 </div>

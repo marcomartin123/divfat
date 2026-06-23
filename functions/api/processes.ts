@@ -19,6 +19,7 @@ type InvoiceRow = {
   upload_date: string;
   total_amount: number;
   file_data: string | null;
+  due_date: string | null;
 };
 
 type TransactionRow = {
@@ -82,6 +83,7 @@ const mapProcess = (
     uploadDate: invoice.upload_date,
     totalAmount: invoice.total_amount,
     fileData: invoice.file_data ?? "",
+    dueDate: invoice.due_date ?? undefined,
   })),
   proofOfPayment: proofsByProcess[row.id]
     ? {
@@ -105,7 +107,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     ORDER BY created_at DESC
   `).all<ProcessRow>(),
     env.DB.prepare(`
-      SELECT process_id, id, file_name, original_name, payer, upload_date, total_amount, file_data
+      SELECT process_id, id, file_name, original_name, payer, upload_date, total_amount, file_data, due_date
       FROM invoices
       ORDER BY upload_date ASC
     `).all<InvoiceRow>(),

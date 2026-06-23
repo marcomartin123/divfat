@@ -30,6 +30,7 @@ type ProcessPayload = {
     uploadDate: string;
     totalAmount: number;
     fileData: string;
+    dueDate?: string;
   }>;
   proofOfPayment?: {
     fileName: string;
@@ -54,6 +55,7 @@ type InvoiceRow = {
   upload_date: string;
   total_amount: number;
   file_data: string | null;
+  due_date: string | null;
 };
 
 type TransactionRow = {
@@ -106,7 +108,7 @@ const loadProcess = async (db: D1Database, id: string) => {
 
   const [invoicesResult, transactionsResult, proof] = await Promise.all([
     db.prepare(`
-      SELECT id, file_name, original_name, payer, upload_date, total_amount, file_data
+      SELECT id, file_name, original_name, payer, upload_date, total_amount, file_data, due_date
       FROM invoices
       WHERE process_id = ?
       ORDER BY upload_date ASC
@@ -149,6 +151,7 @@ const loadProcess = async (db: D1Database, id: string) => {
       uploadDate: invoice.upload_date,
       totalAmount: invoice.total_amount,
       fileData: invoice.file_data ?? "",
+      dueDate: invoice.due_date ?? undefined,
     })),
     proofOfPayment: proof
       ? {
@@ -219,9 +222,10 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
         upload_date,
         total_amount,
         file_data,
+        due_date,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `).bind(
       invoice.id,
       id,
@@ -231,6 +235,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
       invoice.uploadDate,
       invoice.totalAmount,
       invoice.fileData,
+      invoice.dueDate ?? null,
     ));
   }
 

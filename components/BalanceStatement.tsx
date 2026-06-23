@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BalanceEntry, PersonProfile, PersonKey } from '../types';
-import { getExtratoByPerson, getPersonBalance } from '../services/balanceService';
+import { getExtratoByPerson, getPersonBalance, getBalanceSummary } from '../services/balanceService';
 import { ChevronLeft, Plus, DollarSign, X } from 'lucide-react';
 
 interface BalanceStatementProps {
@@ -36,6 +36,7 @@ export const BalanceStatement: React.FC<BalanceStatementProps> = ({
   const extratoB = getExtratoByPerson(entries, 'PERSON_B');
   const balanceA = getPersonBalance(entries, 'PERSON_A');
   const balanceB = getPersonBalance(entries, 'PERSON_B');
+  const summary = getBalanceSummary(entries);
 
   const handleSubmitPayment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,18 +128,18 @@ export const BalanceStatement: React.FC<BalanceStatementProps> = ({
 
       <div className="mb-8 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
         <h2 className="text-xl font-bold text-slate-900 mb-2">Controle de Saldos</h2>
-        {(balanceA < -0.01 || balanceB < -0.01) && (
+        {summary.debtor && summary.amount > 0.01 && (
           <div className="flex items-center gap-3 p-4 bg-orange-50 rounded-xl border border-orange-200">
             <div className="p-2 bg-orange-100 text-orange-700 rounded-lg">
               <DollarSign className="w-5 h-5" />
             </div>
             <p className="text-sm text-orange-900 font-medium">
-              <span className="font-bold">{balanceA < balanceB ? personA.name : personB.name}</span> deve{' '}
+              <span className="font-bold">{summary.debtor === 'PERSON_A' ? personA.name : personB.name}</span> deve{' '}
               <span className="font-bold">
-                {formatCurrency(Math.abs(balanceA < balanceB ? balanceA : balanceB))}
+                {formatCurrency(summary.amount)}
               </span>{' '}
               para{' '}
-              <span className="font-bold">{balanceA > balanceB ? personA.name : personB.name}</span>
+              <span className="font-bold">{summary.creditor === 'PERSON_A' ? personA.name : personB.name}</span>
             </p>
           </div>
         )}

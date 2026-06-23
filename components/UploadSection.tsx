@@ -2,6 +2,7 @@
 import React, { useCallback, useState } from 'react';
 import { Upload, FileText, Loader2, Download, Eye } from 'lucide-react';
 import { PersonProfile, PersonKey, InvoiceFile } from '../types';
+import { formatDateBR } from '../services/dateFormat';
 
 interface UploadSectionProps {
   onFileSelect: (file: File, payer: PersonKey) => void;
@@ -146,6 +147,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                       <span>•</span>
                       <span className="font-medium text-slate-700">Total: {formatCurrency(invoice.totalAmount)}</span>
                     </div>
+                    {invoice.dueDate && (
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        Vencimento: {formatDateBR(invoice.dueDate)}
+                      </div>
+                    )}
                   </div>
                 </div>
                 

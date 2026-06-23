@@ -56,7 +56,6 @@ const SUMMARY_TERMS = [
   "total a pagar",
   "total da fatura",
   "valor total",
-  "vencimento",
 ];
 
 const PAYMENT_TERMS = [
@@ -233,6 +232,17 @@ const extractDetectedTotal = (lines: string[]) => {
   return undefined;
 };
 
+const extractDueDate = (lines: string[], defaultYear: number): string | undefined => {
+  for (const line of lines) {
+    const lower = normalize(line);
+    if (/venciment/i.test(lower)) {
+      const parsed = parseDateFromLine(line, defaultYear);
+      if (parsed) return parsed.date;
+    }
+  }
+  return undefined;
+};
+
 const normalizeTextItems = (items: Array<{ str?: string; transform?: number[] }>) => {
   const rows = new Map<number, Array<{ x: number; text: string }>>();
 
@@ -277,6 +287,7 @@ const parseLines = (lines: string[]): ExtractedData => {
   const text = lines.join("\n");
   const defaultYear = inferStatementYear(text);
   const detectedTotal = extractDetectedTotal(lines);
+  const dueDate = extractDueDate(lines, defaultYear);
   const fallbackDate = lines.map((line) => parseDateFromLine(line, defaultYear)).find(Boolean)?.date ?? formatDate(1, 1, defaultYear);
   const seen = new Set<string>();
   const transactions: ParsedTransaction[] = [];
@@ -357,6 +368,7 @@ const parseLines = (lines: string[]): ExtractedData => {
   return {
     detectedTotal,
     transactions,
+    invoiceDate: dueDate,
   };
 };
 

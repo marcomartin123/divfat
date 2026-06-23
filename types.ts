@@ -77,6 +77,7 @@ export interface InvoiceFile {
   uploadDate: string;
   totalAmount: number; // Valor total somado das transações dessa fatura
   fileData: string; // Base64 do PDF para download/visualização
+  dueDate?: string; // Data de vencimento extraída do PDF (ISO)
 }
 
 export interface Process {

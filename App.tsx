@@ -84,6 +84,12 @@ export default function App() {
     return saved;
   };
 
+  const handleRenameProcess = async (id: string, newName: string) => {
+    const process = processes.find(p => p.id === id);
+    if (!process || !newName.trim()) return;
+    await persistProcess({ ...process, name: newName.trim() });
+  };
+
   const handleStartCreate = () => {
     const now = new Date();
     const monthName = now.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
@@ -204,7 +210,8 @@ export default function App() {
         payer,
         uploadDate: new Date().toISOString(),
         totalAmount: invoiceTotal,
-        fileData: fileData
+        fileData: fileData,
+        dueDate: data.invoiceDate,
       };
 
       const newTransactions: Transaction[] = data.transactions.map((t, index) => ({
@@ -316,36 +323,48 @@ export default function App() {
      const { debtor, amount } = calculateMonthBalance(paidByA, paidByB, shareA, shareB);
      
      try {
-        const fileData = await fileToBase64(file);
+       const fileData = await fileToBase64(file);
 
-        const updatedProcess = await saveProcess({
-          ...activeProcess,
-          status: ProcessStatus.CLOSED,
-          closedAt: new Date().toISOString(),
-          proofOfPayment: {
-            fileName: file.name,
-            date: new Date().toISOString(),
-            fileData: fileData
-          }
-        });
-        setProcesses(prev => prev.map(p => p.id === updatedProcess.id ? updatedProcess : p));
+       const updatedProcess = await saveProcess({
+         ...activeProcess,
+         status: ProcessStatus.CLOSED,
+         closedAt: new Date().toISOString(),
+         proofOfPayment: {
+           fileName: file.name,
+           date: new Date().toISOString(),
+           fileData: fileData
+         }
+       });
+       setProcesses(prev => prev.map(p => p.id === updatedProcess.id ? updatedProcess : p));
 
-        if (debtor && amount > 0.01) {
-          const newEntry = await createBalanceEntry({
-            person: debtor,
-            processId: activeProcess.id,
-            type: 'DEBIT',
-            amount,
-            description: `Fechamento ${activeProcess.name}`,
-            entryDate: new Date().toISOString(),
-          });
-          setBalanceEntries(prev => [newEntry, ...prev]);
-        }
+       if (debtor && amount > 0.01) {
+         try {
+           const newEntry = await createBalanceEntry({
+             person: debtor,
+             processId: activeProcess.id,
+             type: 'DEBIT',
+             amount,
+             description: `Fechamento ${activeProcess.name}`,
+             entryDate: new Date().toISOString(),
+           });
+           setBalanceEntries(prev => [newEntry, ...prev]);
+         } catch (balanceError) {
+           // Rollback: reverter processo para OPEN se falhar ao criar DEBIT entry
+           await saveProcess({
+             ...updatedProcess,
+             status: ProcessStatus.OPEN,
+             closedAt: undefined,
+             proofOfPayment: undefined,
+           });
+           setProcesses(prev => prev.map(p => p.id === updatedProcess.id ? { ...p, status: ProcessStatus.OPEN, closedAt: undefined, proofOfPayment: undefined } : p));
+           throw new Error("Erro ao registrar saldo. Mês mantido aberto.");
+         }
+       }
 
        setShowProofModal(false);
        setActiveProcessId(null);
-     } catch (e) {
-       setError("Erro ao salvar comprovante.");
+     } catch (e: any) {
+       setError(e.message || "Erro ao salvar comprovante.");
      }
   };
 
@@ -447,6 +466,7 @@ export default function App() {
             onCreateNew={handleStartCreate}
             onResetData={handleResetData}
             onDeleteProcess={handleDeleteProcess}
+            onRenameProcess={handleRenameProcess}
             onExportData={handleExportData}
             onImportData={handleImportData}
             personA={personA}
