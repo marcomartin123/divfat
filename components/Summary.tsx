@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { Transaction, Assignment, PersonProfile, ProcessStatus, PersonKey } from '../types';
-import { Download, CheckCircle, AlertTriangle, FileText, ArrowRightCircle, History, Eye } from 'lucide-react';
+import { Download, CheckCircle, AlertTriangle, FileText, ArrowRightCircle, History, Eye, HandCoins } from 'lucide-react';
 import { CategoryChart } from './CategoryChart';
+import { PendingBalance, getPendingNet } from '../services/balanceService';
 
 interface SummaryProps {
   transactions: Transaction[];
@@ -11,10 +12,12 @@ interface SummaryProps {
   onCloseProcess?: () => void;
   onRequestCarryOver?: (debtor: PersonKey, amount: number) => void;
   proofFileName?: string;
-  closingBalance?: { debtor: PersonKey, amount: number };
+  closingBalance?: { debtor: PersonKey, amount: number, settledAmount?: number, settledAt?: string };
   isCarriedOver?: boolean;
   onViewProof?: () => void;
   onCategoryClick?: (category: string) => void;
+  pendingBalances?: PendingBalance[];
+  onSettlePendingBalance?: () => void;
 }
 
 export const Summary: React.FC<SummaryProps> = ({ 
@@ -28,8 +31,14 @@ export const Summary: React.FC<SummaryProps> = ({
   closingBalance,
   isCarriedOver,
   onViewProof,
-  onCategoryClick
+  onCategoryClick,
+  pendingBalances = [],
+  onSettlePendingBalance
 }) => {
+  const pendingNet = getPendingNet(pendingBalances);
+  const pendingDebtor = pendingNet > 0 ? personA : personB;
+  const pendingCreditor = pendingNet > 0 ? personB : personA;
+  const pendingAmount = Math.abs(pendingNet);
   
   const stats = useMemo(() => {
     let total = 0;
@@ -180,6 +189,38 @@ export const Summary: React.FC<SummaryProps> = ({
 
           <div className="h-px bg-slate-100 w-full my-4"></div>
 
+          {pendingBalances.length > 0 && (
+            <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-orange-600" />
+                  <p className="text-sm font-bold text-orange-900">Pendência acumulada</p>
+                </div>
+                {onSettlePendingBalance && (
+                  <button
+                    onClick={onSettlePendingBalance}
+                    className="text-xs font-medium text-orange-700 hover:text-orange-900 flex items-center gap-1"
+                  >
+                    <HandCoins className="w-3 h-3" />
+                    Quitar
+                  </button>
+                )}
+              </div>
+              {pendingAmount > 0.009 ? (
+                <p className="text-sm text-orange-800">
+                  <span className={`font-bold ${pendingDebtor.textClass}`}>{pendingDebtor.name}</span> deve{' '}
+                  <span className="font-bold">{formatCurrency(pendingAmount)}</span> para{' '}
+                  <span className={`font-bold ${pendingCreditor.textClass}`}>{pendingCreditor.name}</span>
+                </p>
+              ) : (
+                <p className="text-sm text-orange-800">Há pendências abertas que se compensam entre os dois.</p>
+              )}
+              <p className="text-xs text-orange-700 mt-1">
+                {pendingBalances.length} {pendingBalances.length === 1 ? 'mês empurrado' : 'meses empurrados'} ainda em aberto.
+              </p>
+            </div>
+          )}
+
           {/* Settlement Logic */}
           {!isSettled ? (
             <div className={`p-5 rounded-xl border-l-4 ${debtor.borderClass.replace('border-', 'border-l-')} bg-slate-50 shadow-sm`}>
@@ -221,10 +262,12 @@ export const Summary: React.FC<SummaryProps> = ({
                     <ArrowRightCircle className="w-4 h-4" />
                     <span>Saldo Transferido</span>
                   </div>
-                  {isCarriedOver ? (
-                    <span>Já incluído no próximo mês.</span>
+                  {closingBalance.settledAmount && closingBalance.settledAmount >= closingBalance.amount ? (
+                    <span>Saldo quitado.</span>
+                  ) : isCarriedOver ? (
+                    <span>Saldo já foi importado por fluxo antigo.</span>
                   ) : (
-                    <span>Aguardando abertura de novo mês para importação.</span>
+                    <span>Saldo está na lista de pendências.</span>
                   )}
                 </div>
               ) : null}

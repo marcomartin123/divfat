@@ -1,7 +1,8 @@
 
 import React, { useRef } from 'react';
 import { Process, ProcessStatus, PersonProfile } from '../types';
-import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud } from 'lucide-react';
+import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud, AlertTriangle, HandCoins } from 'lucide-react';
+import { getPendingBalances, getPendingNet, getRemainingBalance } from '../services/balanceService';
 
 interface HistoryViewProps {
   processes: Process[];
@@ -13,21 +14,34 @@ interface HistoryViewProps {
   onDeleteProcess: (id: string) => void;
   onExportData: () => void; // Local Download (Backup simples)
   onImportData: (file: File) => void; // Local Upload
+  onSettlePendingBalance: () => void;
 }
 
 export const HistoryView: React.FC<HistoryViewProps> = ({ 
   processes, 
   onOpenProcess, 
+  personA,
+  personB,
   onCreateNew, 
   onResetData,
   onDeleteProcess,
   onExportData,
-  onImportData
+  onImportData,
+  onSettlePendingBalance
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingBalances = getPendingBalances(processes);
+  const pendingNet = getPendingNet(pendingBalances);
+  const pendingDebtor = pendingNet > 0 ? personA : personB;
+  const pendingCreditor = pendingNet > 0 ? personB : personA;
+  const pendingAmount = Math.abs(pendingNet);
   
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('pt-BR');
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
   const getProcessTotal = (process: Process) => {
@@ -93,6 +107,32 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
         </div>
       </div>
 
+      {pendingBalances.length > 0 && (
+        <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-orange-100 text-orange-700 rounded-lg">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-orange-900">Saldo pendente acumulado</p>
+              <p className="text-sm text-orange-800 mt-1">
+                {pendingDebtor.name} deve {formatCurrency(pendingAmount)} para {pendingCreditor.name}
+              </p>
+              <p className="text-xs text-orange-700 mt-1">
+                {pendingBalances.length} {pendingBalances.length === 1 ? 'mês pendente' : 'meses pendentes'} em aberto
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onSettlePendingBalance}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
+          >
+            <HandCoins className="w-4 h-4" />
+            Quitar saldo
+          </button>
+        </div>
+      )}
+
       <div className="space-y-4">
         {processes.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 border-dashed">
@@ -125,6 +165,12 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       <span>•</span>
                       <span>Criado em {formatDate(process.createdAt)}</span>
                     </div>
+                    {getRemainingBalance(process) > 0 && process.closingBalance && (
+                      <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-orange-50 border border-orange-100 rounded-full text-xs font-medium text-orange-700">
+                        <AlertTriangle className="w-3 h-3" />
+                        {process.closingBalance.debtor === 'PERSON_A' ? personA.name : personB.name} deve {formatCurrency(getRemainingBalance(process))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -140,7 +186,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                     }`}>
                       {process.status === ProcessStatus.CLOSED ? 'FECHADO' : 'EM ABERTO'}
                     </span>
-                    {process.status === ProcessStatus.CLOSED && (
+                    {process.status === ProcessStatus.CLOSED && process.proofOfPayment && (
                        <span className="text-xs text-slate-400">Comprovante OK</span>
                     )}
                   </div>

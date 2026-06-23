@@ -2,18 +2,13 @@
 import React, { useState } from 'react';
 import { PersonProfile, PersonKey, Assignment } from '../types';
 import { Plus, Zap } from 'lucide-react';
+import { CATEGORIES } from '../services/categoryRules';
 
 interface ManualEntryProps {
   personA: PersonProfile;
   personB: PersonProfile;
   onAddTransaction: (description: string, amount: number, date: string, payer: PersonKey, assignment: Assignment, category: string) => void;
 }
-
-const CATEGORIES = [
-  'Supermercado', 'Restaurante', 'Transporte', 'Serviços Digitais', 
-  'Viagem', 'Saúde', 'Educação', 'Lazer', 'Serviços', 
-  'Financeiro', 'Outros'
-];
 
 export const ManualEntry: React.FC<ManualEntryProps> = ({ personA, personB, onAddTransaction }) => {
   const [description, setDescription] = useState('');

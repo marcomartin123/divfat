@@ -10,6 +10,8 @@ type ProcessRow = {
   closed_at: string | null;
   closing_debtor: "PERSON_A" | "PERSON_B" | null;
   closing_amount: number | null;
+  closing_settled_amount: number;
+  closing_settled_at: string | null;
   carried_over_to_process_id: string | null;
 };
 
@@ -70,6 +72,8 @@ const mapProcess = (
     ? {
         debtor: row.closing_debtor,
         amount: row.closing_amount,
+        settledAmount: row.closing_settled_amount,
+        settledAt: row.closing_settled_at ?? undefined,
       }
     : undefined,
   carriedOverToProcessId: row.carried_over_to_process_id,
@@ -113,6 +117,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       closed_at,
       closing_debtor,
       closing_amount,
+      closing_settled_amount,
+      closing_settled_at,
       carried_over_to_process_id
     FROM processes
     ORDER BY created_at DESC

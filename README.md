@@ -15,10 +15,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1qWRf4zO-m-6jtWxZfMroMI
 
 1. Install dependencies:
    `npm install`
-2. Copy the environment template:
-   `cp .env.example .env.local`
-3. Set `GEMINI_API_KEY` in `.env.local` to process PDFs with Gemini
-4. Run the app:
+2. Run the app:
    `npm run dev`
 
 ## Cloudflare migration target
@@ -26,6 +23,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1qWRf4zO-m-6jtWxZfMroMI
 This app is being prepared for Cloudflare Pages + Workers + D1 + R2.
 
 - Pages will host the React frontend.
-- Workers will handle API calls and secrets such as `GEMINI_API_KEY`.
+- PDF invoice parsing runs locally in the browser with `pdfjs-dist`; no Gemini API key is required.
+- Workers will handle API calls.
 - D1 will store structured data.
 - R2 will store PDFs, proof files, and exported backups.

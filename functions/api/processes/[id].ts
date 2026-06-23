@@ -39,6 +39,8 @@ type ProcessPayload = {
   closingBalance?: {
     debtor: PersonKey;
     amount: number;
+    settledAmount?: number;
+    settledAt?: string;
   };
   carriedOverToProcessId?: string | null;
 };
@@ -51,6 +53,8 @@ type ProcessRow = {
   closed_at: string | null;
   closing_debtor: PersonKey | null;
   closing_amount: number | null;
+  closing_settled_amount: number;
+  closing_settled_at: string | null;
   carried_over_to_process_id: string | null;
 };
 
@@ -106,6 +110,8 @@ const loadProcess = async (db: D1Database, id: string) => {
       closed_at,
       closing_debtor,
       closing_amount,
+      closing_settled_amount,
+      closing_settled_at,
       carried_over_to_process_id
     FROM processes
     WHERE id = ?
@@ -172,6 +178,8 @@ const loadProcess = async (db: D1Database, id: string) => {
       ? {
           debtor: process.closing_debtor,
           amount: process.closing_amount,
+          settledAmount: process.closing_settled_amount,
+          settledAt: process.closing_settled_at ?? undefined,
         }
       : undefined,
     carriedOverToProcessId: process.carried_over_to_process_id,
@@ -207,10 +215,12 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
         closed_at,
         closing_debtor,
         closing_amount,
+        closing_settled_amount,
+        closing_settled_at,
         carried_over_to_process_id,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         status = excluded.status,
@@ -218,6 +228,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
         closed_at = excluded.closed_at,
         closing_debtor = excluded.closing_debtor,
         closing_amount = excluded.closing_amount,
+        closing_settled_amount = excluded.closing_settled_amount,
+        closing_settled_at = excluded.closing_settled_at,
         carried_over_to_process_id = excluded.carried_over_to_process_id,
         updated_at = CURRENT_TIMESTAMP
     `).bind(
@@ -228,6 +240,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
       process.closedAt ?? null,
       process.closingBalance?.debtor ?? null,
       process.closingBalance?.amount ?? null,
+      process.closingBalance?.settledAmount ?? 0,
+      process.closingBalance?.settledAt ?? null,
       process.carriedOverToProcessId ?? null,
     ),
     env.DB.prepare("DELETE FROM transactions WHERE process_id = ?").bind(id),

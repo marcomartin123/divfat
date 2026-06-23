@@ -7,6 +7,7 @@ import { ManualEntry } from './components/ManualEntry';
 import { HistoryView } from './components/HistoryView';
 import { parseInvoicePDF } from './services/geminiService';
 import { createProcess, deleteProcess, listProcesses, saveProcess } from './services/processService';
+import { getPendingBalances, getPendingNet } from './services/balanceService';
 import { Transaction, Assignment, DEFAULT_PEOPLE, PersonProfile, Process, ProcessStatus, InvoiceFile, PersonKey } from './types';
 import { Receipt, AlertCircle, X, ChevronLeft, AlertTriangle, UploadCloud, Trash2 } from 'lucide-react';
 
@@ -35,11 +36,10 @@ export default function App() {
   const [isCreatingProcess, setIsCreatingProcess] = useState(false);
   const [newProcessName, setNewProcessName] = useState('');
   
-  // Pending Debt Logic
-  const [pendingDebtProcess, setPendingDebtProcess] = useState<Process | null>(null);
-
   // Carry Over Logic (Modal State)
   const [carryOverData, setCarryOverData] = useState<{debtor: PersonKey, amount: number} | null>(null);
+  const [showSettlementModal, setShowSettlementModal] = useState(false);
+  const [settlementAmount, setSettlementAmount] = useState('');
 
   // Deletion Modals State
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
@@ -73,6 +73,9 @@ export default function App() {
   }, [activeProcessId]);
 
   const activeProcess = processes.find(p => p.id === activeProcessId);
+  const pendingBalances = getPendingBalances(processes);
+  const pendingNet = getPendingNet(pendingBalances);
+  const pendingAmount = Math.abs(pendingNet);
 
   const persistProcess = async (process: Process) => {
     const saved = await saveProcess(process);
@@ -166,65 +169,12 @@ export default function App() {
 
     try {
       const newProcess = await createProcess(newProcessName);
-      let updatedProcesses = [newProcess, ...processes];
-
-      const pendingProcess = processes.find(p => 
-        p.status === ProcessStatus.CLOSED && 
-        p.closingBalance && 
-        !p.carriedOverToProcessId
-      );
-
-      if (pendingProcess) {
-        setPendingDebtProcess(pendingProcess);
-        setProcesses(updatedProcesses);
-        setActiveProcessId(newProcess.id);
-        setIsCreatingProcess(false);
-        return;
-      }
-
-      setProcesses(updatedProcesses);
+      setProcesses([newProcess, ...processes]);
       setActiveProcessId(newProcess.id);
       setIsCreatingProcess(false);
     } catch (err: any) {
       setError(err.message || "Erro ao criar mês.");
     }
-  };
-
-  const handleImportPendingDebt = async (shouldImport: boolean) => {
-    if (!pendingDebtProcess || !activeProcessId) return;
-
-    if (shouldImport && pendingDebtProcess.closingBalance) {
-      const { debtor, amount } = pendingDebtProcess.closingBalance;
-      const creditor = debtor === 'PERSON_A' ? 'PERSON_B' : 'PERSON_A';
-      
-      const debtTx: Transaction = {
-        id: `carry-${Date.now()}`,
-        description: `Saldo Anterior (${pendingDebtProcess.name})`,
-        amount: amount,
-        date: new Date().toISOString().split('T')[0],
-        payer: creditor,
-        assignment: debtor === 'PERSON_A' ? Assignment.PERSON_A : Assignment.PERSON_B, 
-        source: 'CARRYOVER',
-        category: 'Outros'
-      };
-
-      const currentActive = processes.find(p => p.id === activeProcessId);
-      if (!currentActive) return;
-
-      try {
-        const updatedActive = await saveProcess({ ...currentActive, transactions: [debtTx, ...currentActive.transactions] });
-        const updatedPending = await saveProcess({ ...pendingDebtProcess, carriedOverToProcessId: activeProcessId });
-        setProcesses(prev => prev.map(p => {
-          if (p.id === updatedActive.id) return updatedActive;
-          if (p.id === updatedPending.id) return updatedPending;
-          return p;
-        }));
-      } catch (e: any) {
-        setError(e.message || "Erro ao importar saldo anterior.");
-      }
-    }
-
-    setPendingDebtProcess(null);
   };
 
   const handleFileSelect = async (file: File, payer: PersonKey) => {
@@ -383,13 +333,63 @@ export default function App() {
         closedAt: new Date().toISOString(),
         closingBalance: {
           debtor: carryOverData.debtor,
-          amount: carryOverData.amount
+          amount: carryOverData.amount,
+          settledAmount: 0
         }
       });
       setCarryOverData(null);
       setActiveProcessId(null);
     } catch (e: any) {
       setError(e.message || "Erro ao fechar mês com saldo pendente.");
+    }
+  };
+
+  const handleOpenSettlementModal = () => {
+    setSettlementAmount(pendingAmount > 0 ? pendingAmount.toFixed(2) : '');
+    setShowSettlementModal(true);
+  };
+
+  const confirmSettlePendingBalance = async (settleAll = false) => {
+    if (pendingBalances.length === 0 || pendingAmount <= 0) return;
+
+    const amountToSettle = settleAll
+      ? pendingAmount
+      : Number.parseFloat(settlementAmount.replace(',', '.'));
+
+    if (!Number.isFinite(amountToSettle) || amountToSettle <= 0) {
+      setError("Informe um valor válido para quitação.");
+      return;
+    }
+
+    const debtorToSettle: PersonKey = pendingNet > 0 ? 'PERSON_A' : 'PERSON_B';
+    let remainingSettlement = Math.min(amountToSettle, pendingAmount);
+    const now = new Date().toISOString();
+    const updated: Process[] = [];
+
+    try {
+      for (const pending of pendingBalances.filter((balance) => balance.debtor === debtorToSettle)) {
+        if (remainingSettlement <= 0) break;
+
+        const applied = Math.min(remainingSettlement, pending.remainingAmount);
+        remainingSettlement -= applied;
+
+        const nextSettledAmount = Math.min(pending.amount, pending.settledAmount + applied);
+        const saved = await saveProcess({
+          ...pending.process,
+          closingBalance: {
+            ...pending.process.closingBalance!,
+            settledAmount: nextSettledAmount,
+            settledAt: nextSettledAmount >= pending.amount - 0.009 ? now : pending.process.closingBalance?.settledAt,
+          },
+        });
+        updated.push(saved);
+      }
+
+      setProcesses(prev => prev.map(process => updated.find(item => item.id === process.id) ?? process));
+      setShowSettlementModal(false);
+      setSettlementAmount('');
+    } catch (e: any) {
+      setError(e.message || "Erro ao registrar quitação.");
     }
   };
 
@@ -472,6 +472,7 @@ export default function App() {
             onImportData={handleImportData}
             personA={personA}
             personB={personB}
+            onSettlePendingBalance={handleOpenSettlementModal}
           />
         ) : (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -569,6 +570,8 @@ export default function App() {
                     }
                   }}
                   onCategoryClick={handleCategoryClick}
+                  pendingBalances={pendingBalances}
+                  onSettlePendingBalance={handleOpenSettlementModal}
                 />
               </div>
             </div>
@@ -642,7 +645,7 @@ export default function App() {
             </div>
 
             <p className="text-xs text-slate-500 mb-6 text-center">
-              O status deste mês mudará para <strong>FECHADO (SALDO PENDENTE)</strong> e o valor será oferecido para importação quando você criar o próximo mês.
+              O status deste mês mudará para <strong>FECHADO (SALDO PENDENTE)</strong> e o valor ficará na lista de pendências até ser quitado.
             </p>
 
             <div className="grid gap-3">
@@ -662,56 +665,85 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Pending Debt Import Modal (On New Month) */}
-      {pendingDebtProcess && (
+      
+      {/* Pending Balance Settlement Modal */}
+      {showSettlementModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
-             <div className="flex items-center justify-center mb-4">
-               <div className="bg-indigo-100 p-4 rounded-full">
-                 <Receipt className="w-8 h-8 text-indigo-600" />
-               </div>
-             </div>
-             
-             <h3 className="text-xl font-bold text-slate-900 text-center mb-2">
-               Saldo Encontrado
-             </h3>
-             
-             <p className="text-slate-500 text-center text-sm mb-6">
-               O processo <strong>"{pendingDebtProcess.name}"</strong> foi fechado com um saldo pendente de:
-             </p>
-
-             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-center">
-                <p className="text-2xl font-bold text-slate-900">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pendingDebtProcess.closingBalance?.amount || 0)}
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Quitar Saldo Pendente</h3>
+                <p className="text-slate-500 text-sm mt-1">
+                  Registre uma quitação parcial ou total do saldo acumulado.
                 </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  A ser pago por {pendingDebtProcess.closingBalance?.debtor === 'PERSON_A' ? personA.name : personB.name}
-                </p>
-             </div>
+              </div>
+              <button onClick={() => setShowSettlementModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-             <p className="text-slate-500 text-center text-xs mb-6">
-               Deseja importar essa dívida automaticamente para o novo mês <strong>"{newProcessName}"</strong>?
-             </p>
+            {pendingAmount > 0.009 ? (
+              <>
+                <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 mb-4">
+                  <p className="text-sm text-orange-800">
+                    {pendingNet > 0 ? personA.name : personB.name} deve
+                  </p>
+                  <p className="text-2xl font-bold text-orange-950">
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pendingAmount)}
+                  </p>
+                  <p className="text-sm text-orange-800">
+                    para {pendingNet > 0 ? personB.name : personA.name}
+                  </p>
+                </div>
 
-             <div className="grid grid-cols-2 gap-3">
-               <button 
-                 onClick={() => handleImportPendingDebt(false)}
-                 className="py-3 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-colors"
-               >
-                 Ignorar
-               </button>
-               <button 
-                 onClick={() => handleImportPendingDebt(true)}
-                 className="py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
-               >
-                 Sim, Importar
-               </button>
-             </div>
+                <div className="space-y-2 mb-4 max-h-40 overflow-auto">
+                  {pendingBalances.map((pending) => (
+                    <div key={pending.process.id} className="flex items-center justify-between text-xs bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                      <span className="font-medium text-slate-700">{pending.process.name}</span>
+                      <span className="text-slate-500">
+                        {pending.debtor === 'PERSON_A' ? personA.name : personB.name} deve{' '}
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pending.remainingAmount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <label className="block text-sm font-medium text-slate-700 mb-1">Valor quitado</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={pendingAmount}
+                  value={settlementAmount}
+                  onChange={(e) => setSettlementAmount(e.target.value)}
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 mb-5"
+                  placeholder="0,00"
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => confirmSettlePendingBalance(false)}
+                    className="py-3 bg-orange-100 text-orange-800 rounded-xl font-medium hover:bg-orange-200 transition-colors"
+                  >
+                    Quitar Parcial
+                  </button>
+                  <button
+                    onClick={() => confirmSettlePendingBalance(true)}
+                    className="py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition-colors"
+                  >
+                    Quitar Total
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
+                Não há saldo líquido pendente para quitar.
+              </div>
+            )}
           </div>
         </div>
       )}
-      
+
       {/* Proof of Payment Upload Modal (Close Process) */}
       {showProofModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
