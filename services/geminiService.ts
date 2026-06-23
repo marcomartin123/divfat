@@ -128,13 +128,16 @@ const parseDateFromLine = (line: string, defaultYear: number) => {
     }
   }
 
-  const named = line.match(/\b(\d{1,2})\s+([a-zçãé]{3,9})\b/i);
+  const named = line.match(/\b(\d{1,2})\s+(?:de\s+)?([a-zçãé]{3,9})(?:\s+de\s+(\d{2,4}))?\b/i);
   if (named) {
     const day = Number(named[1]);
     const month = MONTH_BY_NAME[normalize(named[2])];
+    const year = named[3]
+      ? Number(named[3].length === 2 ? `20${named[3]}` : named[3])
+      : defaultYear;
     if (day >= 1 && day <= 31 && month) {
       return {
-        date: formatDate(day, month, defaultYear),
+        date: formatDate(day, month, year),
         raw: named[0],
         index: named.index ?? 0,
       };
@@ -233,11 +236,18 @@ const extractDetectedTotal = (lines: string[]) => {
 };
 
 const extractDueDate = (lines: string[], defaultYear: number): string | undefined => {
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const lower = normalize(line);
     if (/venciment/i.test(lower)) {
       const parsed = parseDateFromLine(line, defaultYear);
       if (parsed) return parsed.date;
+      // Se a data não está na mesma linha, tenta a próxima linha
+      const nextLine = lines[i + 1];
+      if (nextLine) {
+        const parsedNext = parseDateFromLine(nextLine, defaultYear);
+        if (parsedNext) return parsedNext.date;
+      }
     }
   }
   return undefined;
