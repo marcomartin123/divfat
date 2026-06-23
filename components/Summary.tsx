@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
-import { Transaction, Assignment, PersonProfile, ProcessStatus, PersonKey } from '../types';
-import { Download, CheckCircle, AlertTriangle, FileText, ArrowRightCircle, History, Eye, HandCoins } from 'lucide-react';
+import { Transaction, Assignment, PersonProfile, ProcessStatus } from '../types';
+import { Download, CheckCircle, AlertTriangle, FileText, Eye } from 'lucide-react';
 import { CategoryChart } from './CategoryChart';
-import { PendingBalance, getPendingNet } from '../services/balanceService';
 
 interface SummaryProps {
   transactions: Transaction[];
@@ -10,14 +9,9 @@ interface SummaryProps {
   personB: PersonProfile;
   status: ProcessStatus;
   onCloseProcess?: () => void;
-  onRequestCarryOver?: (debtor: PersonKey, amount: number) => void;
   proofFileName?: string;
-  closingBalance?: { debtor: PersonKey, amount: number, settledAmount?: number, settledAt?: string };
-  isCarriedOver?: boolean;
   onViewProof?: () => void;
   onCategoryClick?: (category: string) => void;
-  pendingBalances?: PendingBalance[];
-  onSettlePendingBalance?: () => void;
 }
 
 export const Summary: React.FC<SummaryProps> = ({ 
@@ -26,20 +20,10 @@ export const Summary: React.FC<SummaryProps> = ({
   personB, 
   status, 
   onCloseProcess, 
-  onRequestCarryOver,
   proofFileName,
-  closingBalance,
-  isCarriedOver,
   onViewProof,
   onCategoryClick,
-  pendingBalances = [],
-  onSettlePendingBalance
 }) => {
-  const pendingNet = getPendingNet(pendingBalances);
-  const pendingDebtor = pendingNet > 0 ? personA : personB;
-  const pendingCreditor = pendingNet > 0 ? personB : personA;
-  const pendingAmount = Math.abs(pendingNet);
-  
   const stats = useMemo(() => {
     let total = 0;
     
@@ -144,16 +128,7 @@ export const Summary: React.FC<SummaryProps> = ({
   const debtor = stats.balanceA < 0 ? personA : personB;
   const creditor = stats.balanceA > 0 ? personA : personB;
   const settlementAmount = Math.abs(stats.balanceA);
-  const isSettled = Math.abs(stats.balanceA) < 0.01; // Floating point tolerance
-
-  // Handling CarryOver Logic
-  const handleCarryOverClick = () => {
-    if (onRequestCarryOver && !isSettled) {
-      // If balanceA is negative, A is debtor. If positive, B is debtor (since balanceB would be negative).
-      const debtorKey: PersonKey = stats.balanceA < 0 ? 'PERSON_A' : 'PERSON_B';
-      onRequestCarryOver(debtorKey, settlementAmount);
-    }
-  };
+  const isSettled = Math.abs(stats.balanceA) < 0.01;
 
   return (
     <div className="flex flex-col gap-6 sticky top-24 h-full">
@@ -161,9 +136,9 @@ export const Summary: React.FC<SummaryProps> = ({
         <div className="flex justify-between items-start mb-6">
           <h2 className="text-xl font-bold text-slate-800">Resumo Executivo</h2>
           {status === ProcessStatus.CLOSED && (
-            <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${proofFileName ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-              {proofFileName ? <CheckCircle className="w-3 h-3" /> : <History className="w-3 h-3" />}
-              {proofFileName ? 'FECHADO' : 'SALDO PENDENTE'}
+            <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${proofFileName ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
+              {proofFileName ? <CheckCircle className="w-3 h-3" /> : null}
+              {proofFileName ? 'FECHADO' : 'SEM COMPROVANTE'}
             </span>
           )}
         </div>
@@ -189,38 +164,6 @@ export const Summary: React.FC<SummaryProps> = ({
 
           <div className="h-px bg-slate-100 w-full my-4"></div>
 
-          {pendingBalances.length > 0 && (
-            <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <div className="flex items-center gap-2">
-                  <History className="w-4 h-4 text-orange-600" />
-                  <p className="text-sm font-bold text-orange-900">Pendência acumulada</p>
-                </div>
-                {onSettlePendingBalance && (
-                  <button
-                    onClick={onSettlePendingBalance}
-                    className="text-xs font-medium text-orange-700 hover:text-orange-900 flex items-center gap-1"
-                  >
-                    <HandCoins className="w-3 h-3" />
-                    Quitar
-                  </button>
-                )}
-              </div>
-              {pendingAmount > 0.009 ? (
-                <p className="text-sm text-orange-800">
-                  <span className={`font-bold ${pendingDebtor.textClass}`}>{pendingDebtor.name}</span> deve{' '}
-                  <span className="font-bold">{formatCurrency(pendingAmount)}</span> para{' '}
-                  <span className={`font-bold ${pendingCreditor.textClass}`}>{pendingCreditor.name}</span>
-                </p>
-              ) : (
-                <p className="text-sm text-orange-800">Há pendências abertas que se compensam entre os dois.</p>
-              )}
-              <p className="text-xs text-orange-700 mt-1">
-                {pendingBalances.length} {pendingBalances.length === 1 ? 'mês empurrado' : 'meses empurrados'} ainda em aberto.
-              </p>
-            </div>
-          )}
-
           {/* Settlement Logic */}
           {!isSettled ? (
             <div className={`p-5 rounded-xl border-l-4 ${debtor.borderClass.replace('border-', 'border-l-')} bg-slate-50 shadow-sm`}>
@@ -242,35 +185,19 @@ export const Summary: React.FC<SummaryProps> = ({
             </div>
           )}
 
-          {/* Proof / History Logic */}
-          {status === ProcessStatus.CLOSED && (
-            <div className="mt-4 space-y-2">
-              {proofFileName ? (
-                <div 
-                  className="p-3 bg-slate-100 rounded-lg text-xs text-slate-500 flex items-center justify-between cursor-pointer hover:bg-slate-200 transition-colors"
-                  onClick={onViewProof}
-                >
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    <span>Comprovante: {proofFileName}</span>
-                  </div>
-                  <Eye className="w-4 h-4 text-slate-400" />
+          {/* Proof */}
+          {status === ProcessStatus.CLOSED && proofFileName && (
+            <div className="mt-4">
+              <div 
+                className="p-3 bg-slate-100 rounded-lg text-xs text-slate-500 flex items-center justify-between cursor-pointer hover:bg-slate-200 transition-colors"
+                onClick={onViewProof}
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  <span>Comprovante: {proofFileName}</span>
                 </div>
-              ) : closingBalance ? (
-                <div className="p-3 bg-orange-50 border border-orange-100 rounded-lg text-xs text-orange-700">
-                  <div className="flex items-center gap-2 font-bold mb-1">
-                    <ArrowRightCircle className="w-4 h-4" />
-                    <span>Saldo Transferido</span>
-                  </div>
-                  {closingBalance.settledAmount && closingBalance.settledAmount >= closingBalance.amount ? (
-                    <span>Saldo quitado.</span>
-                  ) : isCarriedOver ? (
-                    <span>Saldo já foi importado por fluxo antigo.</span>
-                  ) : (
-                    <span>Saldo está na lista de pendências.</span>
-                  )}
-                </div>
-              ) : null}
+                <Eye className="w-4 h-4 text-slate-400" />
+              </div>
             </div>
           )}
 
@@ -286,9 +213,7 @@ export const Summary: React.FC<SummaryProps> = ({
             <span>Baixar Relatório (CSV)</span>
           </button>
 
-          {status === ProcessStatus.OPEN && (
-            <>
-              {onCloseProcess && (
+          {status === ProcessStatus.OPEN && onCloseProcess && (
                 <button 
                   onClick={onCloseProcess}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200"
@@ -297,18 +222,6 @@ export const Summary: React.FC<SummaryProps> = ({
                   <span>Fechar Mês (Upload Comprovante)</span>
                 </button>
               )}
-              
-              {!isSettled && onRequestCarryOver && (
-                <button 
-                  onClick={handleCarryOverClick}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-orange-100 text-orange-800 border border-orange-200 rounded-xl font-medium hover:bg-orange-200 transition-colors"
-                >
-                  <ArrowRightCircle className="w-4 h-4" />
-                  <span>Fechar e Empurrar Saldo</span>
-                </button>
-              )}
-            </>
-          )}
         </div>
       </div>
       

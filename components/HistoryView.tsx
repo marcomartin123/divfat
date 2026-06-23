@@ -1,8 +1,7 @@
-
 import React, { useRef } from 'react';
-import { Process, ProcessStatus, PersonProfile } from '../types';
-import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud, AlertTriangle, HandCoins } from 'lucide-react';
-import { getPendingBalances, getPendingNet, getRemainingBalance } from '../services/balanceService';
+import { Process, ProcessStatus, PersonProfile, BalanceEntry } from '../types';
+import { FileText, CheckCircle, Clock, Plus, Trash2, Download, UploadCloud, AlertTriangle, ScrollText } from 'lucide-react';
+import { getBalanceSummary } from '../services/balanceService';
 
 interface HistoryViewProps {
   processes: Process[];
@@ -12,9 +11,11 @@ interface HistoryViewProps {
   onCreateNew: () => void;
   onResetData: () => void;
   onDeleteProcess: (id: string) => void;
-  onExportData: () => void; // Local Download (Backup simples)
-  onImportData: (file: File) => void; // Local Upload
-  onSettlePendingBalance: () => void;
+  onExportData: () => void;
+  onImportData: (file: File) => void;
+  balanceEntries: BalanceEntry[];
+  onViewBalanceStatement: () => void;
+  onRegisterPayment: (payment: { person: string; amount: number; description: string; entryDate: string }) => void;
 }
 
 export const HistoryView: React.FC<HistoryViewProps> = ({ 
@@ -27,14 +28,12 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   onDeleteProcess,
   onExportData,
   onImportData,
-  onSettlePendingBalance
+  balanceEntries,
+  onViewBalanceStatement,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pendingBalances = getPendingBalances(processes);
-  const pendingNet = getPendingNet(pendingBalances);
-  const pendingDebtor = pendingNet > 0 ? personA : personB;
-  const pendingCreditor = pendingNet > 0 ? personB : personA;
-  const pendingAmount = Math.abs(pendingNet);
+  const balanceSummary = getBalanceSummary(balanceEntries);
+  const hasPending = balanceSummary.debtor && balanceSummary.amount > 0.01;
   
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('pt-BR');
@@ -53,7 +52,6 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
     if (file) {
       onImportData(file);
     }
-    // Reset value so we can select the same file again if needed
     if (event.target) event.target.value = '';
   };
 
@@ -65,7 +63,6 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           <p className="text-slate-500">Gerencie seus ciclos de divisão de contas</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Local Actions */}
           <input 
             type="file" 
             ref={fileInputRef}
@@ -83,7 +80,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 
           <button 
             onClick={onExportData}
-            title="Download Backup (Arquivo timestamped)"
+            title="Download Backup"
             className="p-2.5 bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
           >
             <Download className="w-4 h-4" />
@@ -107,28 +104,27 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
         </div>
       </div>
 
-      {pendingBalances.length > 0 && (
+      {hasPending && (
         <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-orange-100 text-orange-700 rounded-lg">
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm font-bold text-orange-900">Saldo pendente acumulado</p>
+              <p className="text-sm font-bold text-orange-900">Saldo Pendente</p>
               <p className="text-sm text-orange-800 mt-1">
-                {pendingDebtor.name} deve {formatCurrency(pendingAmount)} para {pendingCreditor.name}
-              </p>
-              <p className="text-xs text-orange-700 mt-1">
-                {pendingBalances.length} {pendingBalances.length === 1 ? 'mês pendente' : 'meses pendentes'} em aberto
+                <span className="font-bold">{balanceSummary.debtor === 'PERSON_A' ? personA.name : personB.name}</span> deve{' '}
+                <span className="font-bold">{formatCurrency(balanceSummary.amount)}</span> para{' '}
+                <span className="font-bold">{balanceSummary.creditor === 'PERSON_A' ? personA.name : personB.name}</span>
               </p>
             </div>
           </div>
           <button
-            onClick={onSettlePendingBalance}
+            onClick={onViewBalanceStatement}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
           >
-            <HandCoins className="w-4 h-4" />
-            Quitar saldo
+            <ScrollText className="w-4 h-4" />
+            Ver Extrato
           </button>
         </div>
       )}
@@ -165,12 +161,6 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       <span>•</span>
                       <span>Criado em {formatDate(process.createdAt)}</span>
                     </div>
-                    {getRemainingBalance(process) > 0 && process.closingBalance && (
-                      <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-orange-50 border border-orange-100 rounded-full text-xs font-medium text-orange-700">
-                        <AlertTriangle className="w-3 h-3" />
-                        {process.closingBalance.debtor === 'PERSON_A' ? personA.name : personB.name} deve {formatCurrency(getRemainingBalance(process))}
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -193,10 +183,9 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                 </div>
               </div>
 
-              {/* Delete Button - Positioned absolute right */}
               <button
                 onClick={(e) => {
-                  e.stopPropagation(); // Prevents opening the process
+                  e.stopPropagation();
                   onDeleteProcess(process.id);
                 }}
                 className="absolute top-1/2 -translate-y-1/2 right-6 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all z-10"

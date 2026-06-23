@@ -25,6 +25,17 @@ export interface ExtractedData {
   transactions: Omit<Transaction, 'id' | 'assignment' | 'payer' | 'source'>[];
 }
 
+export interface BalanceEntry {
+  id: string;
+  person: PersonKey;
+  processId?: string;
+  type: 'DEBIT' | 'CREDIT';
+  amount: number;
+  description: string;
+  entryDate: string;
+  createdAt: string;
+}
+
 export interface PersonProfile {
   id: PersonKey;
   name: string;
@@ -81,14 +92,6 @@ export interface Process {
     date: string;
     fileData: string; // Base64 do comprovante
   };
-  // Novos campos para controle de saldo "empurrado"
-  closingBalance?: {
-    debtor: PersonKey;
-    amount: number;
-    settledAmount?: number;
-    settledAt?: string;
-  };
-  carriedOverToProcessId?: string | null; // ID do processo futuro que absorveu essa dívida
 }
 export interface FirebaseConfig {
   apiKey: string;
