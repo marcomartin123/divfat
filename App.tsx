@@ -297,7 +297,7 @@ export default function App() {
     }
   };
 
-  const handleCloseProcess = async (file: File) => {
+  const handleCloseProcess = async (file?: File) => {
      if (!activeProcess) return;
 
      const total = activeProcess.transactions.reduce((s, t) => s + t.amount, 0);
@@ -323,17 +323,17 @@ export default function App() {
      const { debtor, amount } = calculateMonthBalance(paidByA, paidByB, shareA, shareB);
      
      try {
-       const fileData = await fileToBase64(file);
+       const fileData = file ? await fileToBase64(file) : undefined;
 
        const updatedProcess = await saveProcess({
          ...activeProcess,
          status: ProcessStatus.CLOSED,
          closedAt: new Date().toISOString(),
-         proofOfPayment: {
+         proofOfPayment: file ? {
            fileName: file.name,
            date: new Date().toISOString(),
-           fileData: fileData
-         }
+           fileData: fileData!
+         } : undefined
        });
        setProcesses(prev => prev.map(p => p.id === updatedProcess.id ? updatedProcess : p));
 
@@ -625,10 +625,10 @@ export default function App() {
             </div>
             
             <p className="text-slate-500 text-sm mb-6">
-              Para finalizar este processo e garantir a auditoria, faça o upload do comprovante de transferência bancária (Pix/DOC).
+              Para finalizar este processo, você pode opcionalmente anexar o comprovante de transferência (Pix/DOC).
             </p>
 
-            <label className="block w-full border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-indigo-500 hover:bg-slate-50 transition-all cursor-pointer">
+            <label className="block w-full border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-indigo-500 hover:bg-slate-50 transition-all cursor-pointer mb-3">
               <input 
                 type="file" 
                 accept="application/pdf,image/*"
@@ -642,6 +642,13 @@ export default function App() {
                 <span className="text-sm font-medium text-slate-700">Clique para enviar o comprovante</span>
               </div>
             </label>
+
+            <button
+              onClick={() => handleCloseProcess()}
+              className="w-full py-2.5 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-colors text-sm"
+            >
+              Fechar sem comprovante
+            </button>
           </div>
         </div>
       )}
