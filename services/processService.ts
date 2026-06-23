@@ -1,9 +1,17 @@
 import { Process } from "../types";
 
+const getErrorMessage = (data: unknown, fallback: string) => {
+  if (data && typeof data === "object" && "error" in data && typeof data.error === "string") {
+    return data.error;
+  }
+
+  return fallback;
+};
+
 const parseJson = async <T>(response: Response): Promise<T> => {
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || "Erro ao acessar a API.");
+    throw new Error(getErrorMessage(data, "Erro ao acessar a API."));
   }
   return data as T;
 };

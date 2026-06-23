@@ -23,18 +23,18 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({ transactions, onCa
   
   const chartData = useMemo(() => {
     // 1. Agrupar por categoria
-    // Fix: Explicitly type the reduce accumulator to avoid 'unknown' type errors
-    const grouped = transactions.reduce<Record<string, number>>((acc, tx) => {
+    const grouped: Record<string, number> = {};
+
+    transactions.forEach((tx) => {
       // Ignorar valores negativos (pagamentos/créditos) para não estragar o gráfico de DESPESAS
-      if (tx.amount <= 0) return acc;
+      if (tx.amount <= 0) return;
       
       const category = tx.category || 'Outros';
-      acc[category] = (acc[category] || 0) + tx.amount;
-      return acc;
-    }, {});
+      grouped[category] = (grouped[category] || 0) + tx.amount;
+    });
 
     // 2. Converter para array
-    let dataArray = Object.entries(grouped).map(([name, value]) => ({
+    let dataArray: Array<{ name: string; value: number }> = Object.entries(grouped).map(([name, value]) => ({
       name,
       value
     }));

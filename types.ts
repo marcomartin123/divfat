@@ -85,6 +85,8 @@ export interface Process {
   closingBalance?: {
     debtor: PersonKey;
     amount: number;
+    settledAmount?: number;
+    settledAt?: string;
   };
   carriedOverToProcessId?: string | null; // ID do processo futuro que absorveu essa dívida
 }
